@@ -2,15 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Fixed Room P2P</title>
+    <title>P2P Pro Call</title>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
-        body { background: #050505; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        .video-wrapper { display: flex; gap: 20px; }
-        video { width: 40vw; background: #111; border-radius: 12px; }
-        .rooms { margin-top: 20px; display: flex; gap: 10px; }
-        button { padding: 15px 25px; border-radius: 8px; border: none; background: #222; color: #fff; cursor: pointer; font-size: 1.1rem; }
-        button:hover { background: #444; }
+        body { background: #000; color: #fff; font-family: sans-serif; text-align: center; }
+        video { width: 45%; background: #222; border-radius: 8px; }
+        .controls { margin: 20px; padding: 20px; background: #111; }
     </style>
 </head>
 <body>
@@ -20,34 +17,43 @@
         <video id="remote" autoplay playsinline></video>
     </div>
 
-    <!-- Pre-set Codes -->
-    <div class="rooms">
-        <button onclick="connect('1111')">Join Room 1111</button>
-        <button onclick="connect('2222')">Join Room 2222</button>
-        <button onclick="connect('3333')">Join Room 3333</button>
+    <div class="controls">
+        <h3>Your ID: <span id="myID" style="color: #0f0;">...</span></h3>
+        <input type="text" id="targetID" placeholder="Enter Friend's ID">
+        <button onclick="callFriend()">Call Friend</button>
     </div>
 
     <script>
+        const myIDDisplay = document.getElementById('myID');
+        const targetInput = document.getElementById('targetID');
         let peer, localStream;
 
-        async function connect(id) {
-            // Cleanup existing connection if switching rooms
-            if (peer) peer.destroy();
-            
+        async function init() {
             localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             document.getElementById('local').srcObject = localStream;
 
-            peer = new Peer(id); // Use the fixed ID
+            // 1. Create peer with a random ID
+            peer = new Peer(); 
 
+            peer.on('open', (id) => {
+                myIDDisplay.innerText = id; // This is the ID you share with your friend
+            });
+
+            // 2. Listen for incoming calls
             peer.on('call', call => {
                 call.answer(localStream);
                 call.on('stream', s => document.getElementById('remote').srcObject = s);
             });
+        }
 
-            // Call the same ID to connect to anyone else in this room
+        // 3. Initiate call to a friend's ID
+        function callFriend() {
+            const id = targetInput.value;
             const call = peer.call(id, localStream);
             call.on('stream', s => document.getElementById('remote').srcObject = s);
         }
+
+        init();
     </script>
 </body>
 </html>
