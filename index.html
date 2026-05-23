@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Pro P2P Call - Fixed</title>
+    <title>Pro P2P Call - All Features</title>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; color: #fff; font-family: sans-serif; text-align: center; }
@@ -22,39 +22,58 @@
         <h3>ID: <span id="myID">...</span> <button onclick="copyID()" class="btn">Copy</button></h3>
         <input type="text" id="targetID" placeholder="Friend's ID">
         <button onclick="callFriend()" class="btn" style="background:#007AFF; color:white;">Call</button>
-        <button onclick="forceSync()" class="btn" style="background:#FF9500;">Force Sync Video</button>
+        <button onclick="shareScreen()" class="btn" style="background:#8e44ad; color:white;">Share Screen</button>
+        <button onclick="flipCamera()" class="btn" style="background:#f39c12; color:white;">Flip Camera</button>
+        <button onclick="forceSync()" class="btn" style="background:#FF9500;">Force Sync</button>
         <button onclick="enableAudio()" class="btn" style="background:#0f0;">Enable Audio</button>
     </div>
 
     <script>
         const myIDDisplay = document.getElementById('myID');
         const remoteVideo = document.getElementById('remote');
-        let peer, localStream, currentCall;
+        const localVideo = document.getElementById('local');
+        let peer, localStream, currentCall, useFront = true;
 
-        async function init() {
-            // Explicitly request video AND audio with constraints
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            document.getElementById('local').srcObject = localStream;
+        async function init(facing = 'user') {
+            localStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: facing }, 
+                audio: true 
+            });
+            localVideo.srcObject = localStream;
             
             peer = new Peer();
             peer.on('open', id => myIDDisplay.innerText = id);
             
-            // Handle incoming call
             peer.on('call', call => {
                 currentCall = call;
-                call.answer(localStream); // Send my stream back immediately
+                call.answer(localStream);
                 call.on('stream', s => remoteVideo.srcObject = s);
             });
         }
 
         function callFriend() {
             const id = document.getElementById('targetID').value;
-            // Send localStream as the second argument - this is CRITICAL
             currentCall = peer.call(id, localStream);
             currentCall.on('stream', s => remoteVideo.srcObject = s);
         }
 
-        // Fixes "He can't see me" by re-adding the track
+        async function shareScreen() {
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const videoTrack = screenStream.getVideoTracks()[0];
+            const sender = currentCall.peerConnection.getSenders().find(s => s.track.kind === 'video');
+            sender.replaceTrack(videoTrack);
+        }
+
+        async function flipCamera() {
+            useFront = !useFront;
+            localStream.getTracks().forEach(t => t.stop());
+            await init(useFront ? 'user' : 'environment');
+            if (currentCall) {
+                const videoTrack = localStream.getVideoTracks()[0];
+                currentCall.peerConnection.getSenders().find(s => s.track.kind === 'video').replaceTrack(videoTrack);
+            }
+        }
+
         function forceSync() {
             const videoTrack = localStream.getVideoTracks()[0];
             const sender = currentCall.peerConnection.getSenders().find(s => s.track.kind === 'video');
