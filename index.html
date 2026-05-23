@@ -1,73 +1,45 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Offline P2P Video</title>
+    <title>FaceTime Auto</title>
     <style>
-        body { background: #121212; color: #e0e0e0; font-family: monospace; text-align: center; }
-        .video-container { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; }
-        video { width: 45%; background: #000; border: 2px solid #333; border-radius: 8px; }
-        textarea { width: 80%; height: 80px; background: #1e1e1e; color: #00ff00; border: 1px solid #444; padding: 10px; }
-        .room-box { margin: 20px; font-size: 1.5rem; color: #00d4ff; }
-        button { padding: 10px 20px; cursor: pointer; background: #333; color: white; border: none; margin: 5px; }
+        body { background: #000; color: #fff; text-align: center; }
+        video { width: 45%; background: #222; }
     </style>
+    <!-- Include PeerJS library -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
 
-    <h2>Offline P2P Video</h2>
-    <div class="room-box" id="room-code">Room Code: Generating...</div>
+    <input type="text" id="room" placeholder="Enter Room Code">
+    <button onclick="start()">Join/Call</button>
 
-    <div class="video-container">
-        <video id="local" autoplay playsinline muted></video>
-        <video id="remote" autoplay playsinline></video>
-    </div>
-
-    <textarea id="io" placeholder="Copy/Paste handshake data here..."></textarea>
-    <div>
-        <button onclick="createOffer()">1. Create Offer</button>
-        <button onclick="handleCode()">2. Accept Offer/Answer</button>
-        <button onclick="copyToClipboard()">Copy Code</button>
-    </div>
+    <video id="local" autoplay playsinline muted></video>
+    <video id="remote" autoplay playsinline></video>
 
     <script>
-        // Generate and display 4-digit code
-        const myCode = Math.floor(1000 + Math.random() * 9000).toString();
-        document.getElementById('room-code').innerText = "Room Code: " + myCode;
+        let peer;
+        let localStream;
 
-        const pc = new RTCPeerConnection({ iceServers: [] });
-        const io = document.getElementById('io');
+        async function start() {
+            const roomCode = document.getElementById('room').value;
+            // PeerJS creates the connection automatically using the code as the ID
+            peer = new Peer(roomCode); 
 
-        async function init() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                document.getElementById('local').srcObject = stream;
-                stream.getTracks().forEach(t => pc.addTrack(t, stream));
-            } catch (err) { alert("Camera access required."); }
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            document.getElementById('local').srcObject = localStream;
+
+            // Listen for incoming calls
+            peer.on('call', call => {
+                call.answer(localStream);
+                call.on('stream', stream => document.getElementById('remote').srcObject = stream);
+            });
+
+            // Make a call
+            const targetCode = prompt("Enter the code of the person you are calling:");
+            const call = peer.call(targetCode, localStream);
+            call.on('stream', stream => document.getElementById('remote').srcObject = stream);
         }
-
-        pc.ontrack = e => document.getElementById('remote').srcObject = e.streams[0];
-        pc.onicecandidate = e => { if (!e.candidate) io.value = JSON.stringify(pc.localDescription); };
-
-        async function createOffer() {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-        }
-
-        async function handleCode() {
-            const data = JSON.parse(io.value);
-            await pc.setRemoteDescription(new RTCSessionDescription(data));
-            if (data.type === 'offer') {
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-            }
-        }
-
-        function copyToClipboard() {
-            io.select();
-            document.execCommand('copy');
-        }
-
-        init();
     </script>
 </body>
 </html>
