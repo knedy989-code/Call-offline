@@ -2,18 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>P2P Video (GitHub Pages)</title>
+    <title>Offline P2P Video</title>
     <style>
         body { background: #121212; color: #e0e0e0; font-family: monospace; text-align: center; }
         .video-container { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; }
         video { width: 45%; background: #000; border: 2px solid #333; border-radius: 8px; }
-        textarea { width: 80%; height: 100px; background: #1e1e1e; color: #00ff00; border: 1px solid #444; padding: 10px; }
+        textarea { width: 80%; height: 80px; background: #1e1e1e; color: #00ff00; border: 1px solid #444; padding: 10px; }
+        .room-box { margin: 20px; font-size: 1.5rem; color: #00d4ff; }
         button { padding: 10px 20px; cursor: pointer; background: #333; color: white; border: none; margin: 5px; }
     </style>
 </head>
 <body>
 
-    <h2>Offline P2P Video Link</h2>
+    <h2>Offline P2P Video</h2>
+    <div class="room-box" id="room-code">Room Code: Generating...</div>
+
     <div class="video-container">
         <video id="local" autoplay playsinline muted></video>
         <video id="remote" autoplay playsinline></video>
@@ -27,14 +30,19 @@
     </div>
 
     <script>
-        // No iceServers needed for local network P2P
+        // Generate and display 4-digit code
+        const myCode = Math.floor(1000 + Math.random() * 9000).toString();
+        document.getElementById('room-code').innerText = "Room Code: " + myCode;
+
         const pc = new RTCPeerConnection({ iceServers: [] });
         const io = document.getElementById('io');
 
         async function init() {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            document.getElementById('local').srcObject = stream;
-            stream.getTracks().forEach(t => pc.addTrack(t, stream));
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById('local').srcObject = stream;
+                stream.getTracks().forEach(t => pc.addTrack(t, stream));
+            } catch (err) { alert("Camera access required."); }
         }
 
         pc.ontrack = e => document.getElementById('remote').srcObject = e.streams[0];
