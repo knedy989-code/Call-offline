@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Pro P2P Call - All Features</title>
+    <title>Pro P2P Call - Full Features</title>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; color: #fff; font-family: sans-serif; text-align: center; }
         video { width: 45%; background: #111; border-radius: 8px; border: 2px solid #333; }
         .controls { margin: 20px; padding: 20px; background: #111; }
         .btn { padding: 12px; margin: 5px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; }
+        #status { color: #0f0; font-size: 0.9rem; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -21,47 +22,77 @@
     <div class="controls">
         <h3>ID: <span id="myID">...</span> <button onclick="copyID()" class="btn">Copy</button></h3>
         <input type="text" id="targetID" placeholder="Friend's ID">
-        <button onclick="callFriend()" class="btn" style="background:#007AFF; color:white;">Call</button>
-        <button onclick="shareScreen()" class="btn" style="background:#8e44ad; color:white;">Share Screen</button>
-        <button onclick="flipCamera()" class="btn" style="background:#f39c12; color:white;">Flip Camera</button>
-        <button onclick="forceSync()" class="btn" style="background:#FF9500;">Force Sync</button>
+        <button onclick="callFriend()" class="btn">Call</button>
+        <button onclick="shareScreen()" class="btn">Share Screen</button>
+        <button onclick="flipCamera()" class="btn">Flip Camera</button>
+        <button onclick="forceSync()" class="btn">Force Sync</button>
+        <button onclick="requestRecall()" class="btn" style="background:#d35400;">Request Recall</button>
+        <button onclick="leaveCall()" class="btn" style="background:#c0392b;">Leave Call</button>
         <button onclick="enableAudio()" class="btn" style="background:#0f0;">Enable Audio</button>
+        <div id="status">Status: Ready</div>
     </div>
 
     <script>
-        const myIDDisplay = document.getElementById('myID');
+        const status = document.getElementById('status');
         const remoteVideo = document.getElementById('remote');
         const localVideo = document.getElementById('local');
         let peer, localStream, currentCall, useFront = true;
 
         async function init(facing = 'user') {
-            localStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: facing }, 
-                audio: true 
-            });
+            localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: true });
             localVideo.srcObject = localStream;
             
             peer = new Peer();
-            peer.on('open', id => myIDDisplay.innerText = id);
+            peer.on('open', id => document.getElementById('myID').innerText = id);
             
+            peer.on('connection', conn => {
+                conn.on('data', data => { if (data === 'RECALL') location.reload(); });
+            });
+
             peer.on('call', call => {
                 currentCall = call;
                 call.answer(localStream);
                 call.on('stream', s => remoteVideo.srcObject = s);
+                status.innerText = "Status: In Call";
             });
         }
 
+        // Auto-fill last ID
+        window.onload = () => {
+            const lastID = localStorage.getItem('lastConnectedID');
+            if (lastID) document.getElementById('targetID').value = lastID;
+        };
+
         function callFriend() {
             const id = document.getElementById('targetID').value;
+            localStorage.setItem('lastConnectedID', id); // Save for reconnection
             currentCall = peer.call(id, localStream);
             currentCall.on('stream', s => remoteVideo.srcObject = s);
+        }
+
+        function leaveCall() {
+            if (currentCall) {
+                currentCall.close();
+                remoteVideo.srcObject = null;
+                status.innerText = "Status: Call Ended";
+            }
+        }
+
+        function requestRecall() {
+            const targetID = document.getElementById('targetID').value;
+            const conn = peer.connect(targetID);
+            conn.on('open', () => {
+                conn.send('RECALL');
+                status.innerText = "Recall Request Sent...";
+                setTimeout(() => location.reload(), 1000);
+            });
         }
 
         async function shareScreen() {
             const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
             const videoTrack = screenStream.getVideoTracks()[0];
             const sender = currentCall.peerConnection.getSenders().find(s => s.track.kind === 'video');
-            sender.replaceTrack(videoTrack);
+            if (sender) sender.replaceTrack(videoTrack);
         }
 
         async function flipCamera() {
@@ -87,7 +118,7 @@
         }
 
         function copyID() {
-            navigator.clipboard.writeText(myIDDisplay.innerText);
+            navigator.clipboard.writeText(document.getElementById('myID').innerText);
             alert("ID Copied!");
         }
 
