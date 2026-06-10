@@ -35,33 +35,17 @@
         .controls {
             position:absolute; bottom:30px; left:50%; transform:translateX(-50%);
             background:rgba(30,30,30,0.95); backdrop-filter:blur(20px);
-            padding:12px 24px; border-radius:9999px; display:flex; gap:30px; z-index:100;
+            padding:12px 24px; border-radius:9999px; display:flex; gap:20px; z-index:100;
         }
         .control-btn { width:60px; height:60px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; background:#333; }
         .control-btn.red { background:#ff3b30; }
 
         .qr-overlay {
-            position: absolute; 
-            bottom: 100px; 
-            right: 20px; 
-            background: white; 
-            padding: 12px; 
-            border-radius: 18px;
-            box-shadow: 0 4px 30px rgba(0,0,0,0.6); 
-            z-index: 200; 
-            cursor: pointer;
-            transition: all 0.4s ease;
-            width: 100px; 
-            height: 100px;
+            position: absolute; bottom: 100px; right: 20px; background: white; padding: 12px; border-radius: 18px;
+            box-shadow: 0 4px 30px rgba(0,0,0,0.6); z-index: 200; cursor: pointer; transition: all 0.4s ease;
+            width: 100px; height: 100px;
         }
-        .qr-overlay.full { 
-            width: 340px !important; 
-            height: 340px !important; 
-            bottom: 50% !important; 
-            right: 50% !important; 
-            transform: translate(50%, 50%) !important;
-            padding: 25px;
-        }
+        .qr-overlay.full { width: 340px !important; height: 340px !important; bottom: 50% !important; right: 50% !important; transform: translate(50%, 50%) !important; padding: 25px; }
 
         .signaling-bar {
             position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
@@ -69,9 +53,13 @@
             font-size: 13px; cursor: pointer; z-index: 50;
         }
 
+        .debug-bar {
+            position: absolute; top: 120px; left: 50%; transform: translateX(-50%);
+            background: rgba(255,140,0,0.9); padding: 6px 14px; border-radius: 9999px;
+            font-size: 12px; z-index: 50; display: none;
+        }
+
         .modal { position:fixed; inset:0; background:rgba(0,0,0,0.95); display:none; align-items:center; justify-content:center; z-index:1000; }
-        .modal-content { background:#1c1c1e; padding:24px; border-radius:20px; width:92%; max-width:380px; text-align:center; }
-        textarea { width:100%; height:140px; background:#111; border:none; color:white; padding:12px; border-radius:12px; margin:12px 0; font-family:monospace; font-size:12px; }
     </style>
 </head>
 <body>
@@ -82,7 +70,7 @@
         <div class="pin-screen">
             <div style="text-align:center;">
                 <h2>Enter Room PIN</h2>
-                <p style="opacity:0.7;">Or scan QR from another device</p>
+                <p style="opacity:0.7;">Same PIN on all devices</p>
             </div>
             <div class="pin-input" id="pinDisplay">
                 <div class="pin-digit">_</div><div class="pin-digit">_</div><div class="pin-digit">_</div><div class="pin-digit">_</div>
@@ -105,10 +93,10 @@
         </header>
 
         <div class="signaling-bar" onclick="showSignalingModal()">📡 Manual Signaling</div>
+        <div class="debug-bar" id="debugBar">Camera: Active</div>
 
         <div class="call-screen" id="videoGrid"></div>
 
-        <!-- QR Overlay -->
         <div id="qrOverlay" class="qr-overlay" onclick="toggleQRSize()">
             <div id="qrcode"></div>
         </div>
@@ -116,16 +104,17 @@
         <div class="controls">
             <div class="control-btn" id="micBtn" onclick="toggleMic()">🎤</div>
             <div class="control-btn" id="videoBtn" onclick="toggleVideo()">📹</div>
+            <div class="control-btn" onclick="restartCamera()" style="font-size:20px;">🔄</div>
             <div class="control-btn red" onclick="endCall()">✕</div>
         </div>
     </div>
 
     <!-- SIGNALING MODAL -->
     <div id="signalingModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="background:#1c1c1e; padding:24px; border-radius:20px; width:92%; max-width:380px;">
             <h3>WebRTC Manual Signaling</h3>
             <button onclick="createOffer()" style="width:100%;padding:12px;margin:8px 0;background:#007aff;border:none;border-radius:12px;color:white;">Create Offer</button>
-            <textarea id="offerArea" placeholder="Paste offer/answer here..."></textarea>
+            <textarea id="offerArea" placeholder="Paste offer/answer here..." style="width:100%;height:140px;background:#111;border:none;color:white;padding:12px;border-radius:12px;margin:12px 0;font-family:monospace;font-size:12px;"></textarea>
             <button onclick="copyToClipboard()" style="width:100%;padding:10px;background:#333;border:none;border-radius:12px;">Copy</button>
             <button onclick="setRemoteDescription()" style="width:100%;padding:12px;margin-top:12px;background:#34c759;border:none;border-radius:12px;color:white;">Paste & Accept</button>
             <button onclick="closeSignalingModal()" style="margin-top:20px;background:none;border:none;color:#ff3b30;">Close</button>
@@ -141,56 +130,82 @@
         let isVideoOff = false;
         let isQRFull = false;
         let currentQRUrl = '';
+        let localVideoTile = null;
 
         function checkURLParams() {
             const params = new URLSearchParams(window.location.search);
             const pin = params.get('pin');
             if (pin && pin.length === 4) {
                 currentPin = pin;
-                setTimeout(() => joinRoom(true), 200);
+                setTimeout(() => joinRoom(true), 300);
             }
         }
 
-        async function startLocalVideo() {
+        async function startLocalVideo(restarting = false) {
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: {facingMode: "user"}, audio: true });
-                addVideoTile(myId, localStream, true);
+                if (localStream) {
+                    localStream.getTracks().forEach(t => t.stop());
+                }
+
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user", width: {ideal: 1280}, height: {ideal: 720} },
+                    audio: { echoCancellation: true, noiseSuppression: true }
+                });
+
+                if (!localVideoTile) {
+                    const grid = document.getElementById('videoGrid');
+                    localVideoTile = document.createElement('div');
+                    localVideoTile.className = 'video-tile local';
+                    localVideoTile.id = 'tile-' + myId;
+                    localVideoTile.innerHTML = `<video id="localVideo" autoplay playsinline muted></video><div class="name-tag">You</div>`;
+                    grid.appendChild(localVideoTile);
+                }
+
+                const videoEl = document.getElementById('localVideo') || localVideoTile.querySelector('video');
+                videoEl.srcObject = localStream;
+
+                document.getElementById('debugBar').style.display = 'block';
+                document.getElementById('debugBar').textContent = 'Camera + Mic: Active';
+
             } catch(e) {
-                addVideoTile(myId, null, true);
+                console.error(e);
+                alert("Camera/Mic error: " + e.message + "\n\nTry allowing permissions again.");
             }
         }
 
         function addVideoTile(id, stream, isLocal = false) {
+            if (isLocal) return;
             const grid = document.getElementById('videoGrid');
             if (document.getElementById('tile-' + id)) return;
             const tile = document.createElement('div');
-            tile.className = `video-tile ${isLocal ? 'local' : ''}`;
+            tile.className = 'video-tile';
             tile.id = 'tile-' + id;
-            tile.innerHTML = `<video autoplay playsinline ${isLocal ? 'muted' : ''}></video><div class="name-tag">${isLocal ? 'You' : 'Peer'}</div>`;
+            tile.innerHTML = `<video autoplay playsinline></video><div class="name-tag">Peer</div>`;
             grid.appendChild(tile);
             const video = tile.querySelector('video');
             if (stream) video.srcObject = stream;
         }
 
-        // WebRTC functions (unchanged)
         async function createPeerConnection(peerId) {
             const pc = new RTCPeerConnection({ iceServers: [{urls: 'stun:stun.l.google.com:19302'}] });
-            if (localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            if (localStream) {
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            }
             pc.ontrack = (e) => addVideoTile(peerId, e.streams[0]);
             peers.set(peerId, pc);
             updatePeerCount();
             return pc;
         }
 
-        async function createOffer() {
-            const target = prompt("Target short ID or 'all':", "all");
+        async function createOffer() { /* unchanged */ 
+            const target = prompt("Target ID or 'all':", "all");
             const pc = await createPeerConnection(target || "all");
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             document.getElementById('offerArea').value = btoa(JSON.stringify({type:"offer", sdp:offer.sdp, from:myId, to:target, pin:currentPin}));
         }
 
-        async function setRemoteDescription() {
+        async function setRemoteDescription() { /* unchanged */ 
             const str = document.getElementById('offerArea').value.trim();
             if (!str) return alert("Paste first");
             try {
@@ -223,12 +238,12 @@
         function addDigit(d) {
             if (currentPin.length >= 4) return;
             currentPin += d;
-            updatePinDisplay();
-        }
-        function clearPin() { currentPin = ''; updatePinDisplay(); }
-        function updatePinDisplay() {
             const digits = document.querySelectorAll('.pin-digit');
             digits.forEach((el,i) => el.textContent = currentPin.length > i ? '•' : '_');
+        }
+        function clearPin() { currentPin = ''; 
+            const digits = document.querySelectorAll('.pin-digit');
+            digits.forEach(el => el.textContent = '_');
         }
 
         async function joinRoom(auto = false) {
@@ -241,29 +256,28 @@
             await startLocalVideo();
             const baseUrl = window.location.href.split('?')[0];
             currentQRUrl = `${baseUrl}?pin=${currentPin}`;
-            generateQR(false); // small
+            generateQR(false);
 
-            setTimeout(() => alert("✅ Tap the QR code to enlarge it"), 800);
+            setTimeout(() => {
+                alert("✅ Media fixes applied.\nUse 🔄 button if camera freezes.");
+            }, 800);
         }
 
         function generateQR(isLarge) {
             const container = document.getElementById('qrcode');
             container.innerHTML = '';
-            
             new QRCode(container, {
                 text: currentQRUrl,
                 width: isLarge ? 290 : 76,
                 height: isLarge ? 290 : 76,
                 colorDark: "#000000",
-                colorLight: "#ffffff",
-                correctLevel: QRCode.CorrectLevel.H
+                colorLight: "#ffffff"
             });
         }
 
         function toggleQRSize() {
             isQRFull = !isQRFull;
             const overlay = document.getElementById('qrOverlay');
-            
             if (isQRFull) {
                 overlay.classList.add('full');
                 generateQR(true);
@@ -276,26 +290,49 @@
         function toggleMic() {
             isMuted = !isMuted;
             document.getElementById('micBtn').textContent = isMuted ? '🔇' : '🎤';
-            if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+            if (localStream) {
+                localStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+            }
         }
 
         function toggleVideo() {
             isVideoOff = !isVideoOff;
             document.getElementById('videoBtn').textContent = isVideoOff ? '🚫' : '📹';
-            if (localStream) localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
+            if (localStream) {
+                localStream.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
+            }
+        }
+
+        async function restartCamera() {
+            document.getElementById('debugBar').textContent = 'Restarting camera...';
+            await startLocalVideo(true);
+            // Re-add tracks to existing peer connections
+            peers.forEach(pc => {
+                if (localStream) {
+                    pc.getSenders().forEach(sender => {
+                        if (sender.track) sender.replaceTrack(localStream.getTracks().find(t => t.kind === sender.track.kind));
+                    });
+                }
+            });
+            alert("Camera & Mic restarted");
         }
 
         function endCall() {
+            if (localStream) localStream.getTracks().forEach(t => t.stop());
             if (confirm("End call?")) location.reload();
         }
 
         document.addEventListener('keydown', e => {
             if (e.key >= '0' && e.key <= '9') addDigit(e.key);
-            if (e.key === 'Backspace') { currentPin = currentPin.slice(0,-1); updatePinDisplay(); }
+            if (e.key === 'Backspace') { currentPin = currentPin.slice(0,-1); 
+                const digits = document.querySelectorAll('.pin-digit');
+                digits.forEach((el,i) => el.textContent = currentPin.length > i ? '•' : '_');
+            }
             if (e.key === 'Enter' && currentPin.length === 4) joinRoom();
         });
 
         window.onload = checkURLParams;
+        console.log("%cLocalFace — Camera/Mic stability improved", "color:#007aff;font-size:15px");
     </script>
 </body>
 </html>
